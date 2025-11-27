@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 220 25% 8%;
+    --foreground: 180 5% 95%;
+
+    --card: 220 20% 12%;
+    --card-foreground: 180 5% 95%;
+
+    --popover: 220 20% 12%;
+    --popover-foreground: 180 5% 95%;
+
+    --primary: 185 85% 55%;
+    --primary-foreground: 220 25% 8%;
+
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 180 5% 95%;
+
+    --muted: 220 15% 15%;
+    --muted-foreground: 180 5% 65%;
+
+    --accent: 185 85% 55%;
+    --accent-foreground: 220 25% 8%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 180 5% 95%;
+
+    --border: 220 15% 20%;
+    --input: 220 15% 20%;
+    --ring: 185 85% 55%;
+
+    --radius: 0.75rem;
+
+    /* Custom crypto theme colors */
+    --gradient-start: 185 85% 55%;
+    --gradient-end: 200 90% 45%;
+    --hero-bg-start: 220 30% 6%;
+    --hero-bg-end: 220 25% 10%;
+    --glass-bg: 220 20% 12%;
+    --glass-border: 185 85% 55%;
+    
+    /* Shadows */
+    --shadow-glow: 0 0 40px hsla(185, 85%, 55%, 0.3);
+    --shadow-card: 0 10px 40px -10px hsla(0, 0%, 0%, 0.5);
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-card/60 backdrop-blur-xl border border-border/50 rounded-xl;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary to-[hsl(var(--gradient-end))] bg-clip-text text-transparent;
+  }
+  
+  .gradient-border {
+    position: relative;
+  }
+  
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 2px;
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--gradient-end)));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
