@@ -4,14 +4,17 @@ import { Shield } from "lucide-react";
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
 
+  // Navigation links including the new Visualization page
   const navLinks = [
     { path: "/", label: "Home" },
     { path: "/algorithm", label: "Algorithm" },
     { path: "/tool", label: "Tool" },
+    { path: "/Visualization", label: "Visualization" },
   ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[hsl(var(--hero-bg-start))] to-[hsl(var(--hero-bg-end))]">
+      {/* Navbar */}
       <nav className="fixed top-0 left-0 right-0 z-50 glass-card border-b border-border/30">
         <div className="container mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16">
@@ -41,14 +44,14 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
         </div>
       </nav>
 
-      <main className="pt-14 sm:pt-16">
-        {children}
-      </main>
+      {/* Main content */}
+      <main className="pt-14 sm:pt-16">{children}</main>
 
+      {/* Footer */}
       <footer className="mt-12 sm:mt-20 py-6 sm:py-8 border-t border-border/30">
         <div className="container mx-auto px-4 text-center text-muted-foreground text-xs sm:text-sm">
-          <p>© All rights reserved to Moaz Elhenawy .</p>
-          <p>© 2026 cryptograph project FCAI .</p>
+          <p>© All rights reserved to Moaz Elhenawy.</p>
+          <p>© 2026 Cryptograph Project FCAI.</p>
         </div>
       </footer>
     </div>
