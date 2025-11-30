@@ -9,7 +9,7 @@ import Home from "./pages/Home";
 import Algorithm from "./pages/Algorithm";
 import Tool from "./pages/Tool";
 import NotFound from "./pages/NotFound";
-import Visualization from "./pages/visualization";
+import Visualization from "./pages/Visualization";
 
 const queryClient = new QueryClient();
 
