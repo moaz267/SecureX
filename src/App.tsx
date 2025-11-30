@@ -6,7 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import ScrollToTop from "./components/ScrollToTop";
 import Home from "./pages/Home";
-import Algorithm from "./pages/Algorithm";
+
 import Tool from "./pages/Tool";
 import NotFound from "./pages/NotFound";
 import Visualization from "./pages/Visualization";
@@ -23,7 +23,6 @@ const App = () => (
         <Layout>
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route path="/algorithm" element={<Algorithm />} />
             <Route path="/tool" element={<Tool />} />
             <Route path="/Visualization" element={<Visualization />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

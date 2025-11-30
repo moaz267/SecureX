@@ -27,17 +27,17 @@ const Home = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center px-4">
-              <Link to="/tool" className="w-full sm:w-auto">
+              <Link to="/visualization" className="w-full sm:w-auto">
                 <Button 
                   size="lg" 
                   className="w-full sm:w-auto bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-6 sm:px-8 py-5 sm:py-6 text-base sm:text-lg rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 animate-glow-pulse group"
                 >
-                  Get Started
+                  let us see the visualization
                   <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
               
-              <Link to="/algorithm" className="w-full sm:w-auto">
+              <Link to="/tool" className="w-full sm:w-auto">
                 <Button 
                   variant="outline" 
                   size="lg"

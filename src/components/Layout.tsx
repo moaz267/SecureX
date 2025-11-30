@@ -7,7 +7,6 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
   // Navigation links including the new Visualization page
   const navLinks = [
     { path: "/", label: "Home" },
-    { path: "/algorithm", label: "Algorithm" },
     { path: "/tool", label: "Tool" },
     { path: "/Visualization", label: "Visualization" },
   ];
