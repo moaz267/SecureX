@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Lock, Bolt, Key, Shield, Check } from "lucide-react"; // تأكد من استيراد Bolt
+import { ArrowRight, Lock, Bolt, Key, Shield, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+  const navLinks = [
+    { path: "algorithm", label: "Algorithm" },
+  ];
 const Home = () => {
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -27,6 +30,8 @@ const Home = () => {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center px-4">
+              
+              {/* Visualization Button */}
               <Link to="/visualization" className="w-full sm:w-auto">
                 <Button 
                   size="lg" 
@@ -36,7 +41,8 @@ const Home = () => {
                   <ArrowRight className="ml-2 w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
-              
+
+              {/* Tool Button */}
               <Link to="/tool" className="w-full sm:w-auto">
                 <Button 
                   variant="outline" 
@@ -46,6 +52,19 @@ const Home = () => {
                   Learn More
                 </Button>
               </Link>
+
+              {/* ⭐ New Algorithm Button */}
+              <Link to="/algorithm" className="w-full sm:w-auto">
+                <Button 
+                  variant="outline" 
+                  size="lg"
+                  className="w-full sm:w-auto border-2 border-primary text-primary hover:bg-primary/10 font-semibold px-6 sm:px-8 py-5 sm:py-6 text-base sm:text-lg rounded-xl flex items-center gap-2"
+                >
+                  Algorithm Overview
+                  <Bolt className="w-5 h-5" />
+                </Button>
+              </Link>
+
             </div>
           </div>
         </div>
