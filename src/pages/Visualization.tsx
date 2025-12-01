@@ -4,12 +4,17 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import XorVisualization from "@/components/XorVisualization";
 import {
   generateKeyPair,
   deriveSharedSecret,
   encryptMessage,
   decryptMessage,
 } from "@/utils/x25519-cipher";
+import { soundEffects } from "@/utils/soundEffects";
 import {
   Play,
   RotateCcw,
@@ -20,6 +25,9 @@ import {
   StepBack,
   FastForward,
   Rewind,
+  Zap,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 interface VisualizationStep {
@@ -27,26 +35,28 @@ interface VisualizationStep {
   char: string;
   charCode: number;
   encrypted: string;
-  stage: "original" | "numeric" | "operation" | "encrypted";
+  stage: "original" | "numeric" | "xor-operation" | "operation" | "encrypted";
   stageLabel: string;
   charBytes?: number[];
   sharedSecretHex?: string;
   keystreamHex?: string;
   ciphertextBytes?: number[];
+  keystreamByte?: number;
+  plaintextByte?: number;
 }
 
 type Speed = "slow" | "medium" | "fast";
 
 const speedSettings = {
-  slow: { step: 2200, complete: 1600 },
-  medium: { step: 1000, complete: 800 },
-  fast: { step: 550, complete: 450 },
+  slow: { step: 2500, xor: 3000, complete: 2500 },
+  medium: { step: 1200, xor: 1200, complete: 1200 },
+  fast: { step: 600, xor: 600, complete: 450 },
 };
 
 const stagesOrder: VisualizationStep["stage"][] = [
   "original",
   "numeric",
-  "operation",
+  "xor-operation",
   "encrypted",
 ];
 
@@ -59,6 +69,9 @@ const Virtualization = () => {
   const [speed, setSpeed] = useState<Speed>("medium");
   const [finalEncryptedText, setFinalEncryptedText] = useState<string>("");
   const [encryptionNonce, setEncryptionNonce] = useState<string>("");
+  const [showXorAnimation, setShowXorAnimation] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [soundVolume, setSoundVolume] = useState(0.3);
 
   const [encryptedInput, setEncryptedInput] = useState("");
   const [nonceInput, setNonceInput] = useState("");
@@ -71,11 +84,10 @@ const Virtualization = () => {
   const runIdRef = useRef(0);
 
   /* ===== Manual-mode related states ===== */
-  const [manualMode, setManualMode] = useState(false); // auto vs manual
+  const [manualMode, setManualMode] = useState(false);
   const [manualPrepared, setManualPrepared] = useState(false);
   const [manualCharIndex, setManualCharIndex] = useState(0);
   const [manualStageIndex, setManualStageIndex] = useState(0);
-  // precomputed per-char previews for manual stepping
   const [manualPreviews, setManualPreviews] = useState<VisualizationStep[]>([]);
 
   useEffect(() => {
@@ -86,6 +98,14 @@ const Virtualization = () => {
       runIdRef.current++;
     };
   }, []);
+
+  useEffect(() => {
+    soundEffects.setEnabled(soundEnabled);
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    soundEffects.setVolume(soundVolume);
+  }, [soundVolume]);
 
   /* ===== Helpers ===== */
 
@@ -120,11 +140,10 @@ const Virtualization = () => {
       }, ms);
     });
 
-  /* ===== Manual preparation (precompute previews) ===== */
+  /* ===== Manual preparation ===== */
 
   const prepareManualEncryption = () => {
     if (!inputText) return;
-    // generate keys & shared secret
     const aliceKeys = generateKeyPair();
     const bobKeys = generateKeyPair();
     const sharedSecret = deriveSharedSecret(aliceKeys.privateKey, bobKeys.publicKey);
@@ -132,12 +151,10 @@ const Virtualization = () => {
     setAlicePrivateKey(aliceKeys.privateKey);
     setBobPublicKey(bobKeys.publicKey);
 
-    // full encrypt to get final ciphertext & nonce
     const { ciphertext: fullCiphertext, nonce } = encryptMessage(inputText, sharedSecret);
     setEncryptionNonce(nonce);
     setFinalEncryptedText(fullCiphertext);
 
-    // short preview of shared secret
     const sharedSecretPreview = (() => {
       try {
         const arr = Array.from(sharedSecret as unknown as number[]);
@@ -169,6 +186,8 @@ const Virtualization = () => {
         sharedSecretHex: sharedSecretPreview,
         keystreamHex: bytesToHex(keystreamBytes).slice(0, 32),
         ciphertextBytes: cipherBytes,
+        plaintextByte: charBytesArr[0] || 0,
+        keystreamByte: keystreamBytes[0] || 0,
       });
     }
 
@@ -186,7 +205,6 @@ const Virtualization = () => {
   const prepareManualDecryption = () => {
     if (!encryptedInput || !nonceInput) return;
 
-    // determine shared secret: use stored keys if present
     let sharedSecret;
     if (alicePrivateKey && bobPublicKey) {
       sharedSecret = deriveSharedSecret(alicePrivateKey, bobPublicKey);
@@ -198,7 +216,6 @@ const Virtualization = () => {
       setBobPublicKey(b.publicKey);
     }
 
-    // decrypt full message to get plaintext
     const fullDecryptedText = decryptMessage(encryptedInput, nonceInput, sharedSecret);
 
     const sharedSecretPreview = (() => {
@@ -232,6 +249,8 @@ const Virtualization = () => {
         sharedSecretHex: sharedSecretPreview,
         keystreamHex: bytesToHex(keystreamBytes).slice(0, 32),
         ciphertextBytes: cipherBytes,
+        plaintextByte: charBytesArr[0] || 0,
+        keystreamByte: keystreamBytes[0] || 0,
       });
     }
 
@@ -239,7 +258,6 @@ const Virtualization = () => {
     setManualPrepared(true);
     setManualCharIndex(0);
     setManualStageIndex(0);
-    // initial current step show encrypted stage for decryption flow
     setCurrentStep({
       ...previews[0],
       stage: "encrypted",
@@ -250,21 +268,24 @@ const Virtualization = () => {
   /* ===== Manual stepping controls ===== */
 
   const updateCurrentStepFromManual = (charIndex: number, stageIndex: number, base = "encrypt") => {
-    // base param to choose initial stage ordering for encrypt vs decrypt
     if (!manualPreviews.length) return;
     const preview = manualPreviews[charIndex];
     const stage = stagesOrder[stageIndex];
     const stageLabelMap: Record<string, string> = {
       original: "Original Character",
-      numeric: "Numeric Mapping (bytes shown)",
-      operation: base === "encrypt" ? "Encryption Operation Applied" : "Decryption Operation Applied",
+      numeric: "Numeric Mapping (bytes)",
+      "xor-operation": "XOR Operation (bit-by-bit)",
+      operation: base === "encrypt" ? "Encryption Applied" : "Decryption Applied",
       encrypted: base === "encrypt" ? "Final Encrypted Value" : "Encrypted Value",
     };
     setCurrentStep({
       ...preview,
       stage,
-      stageLabel: stageLabelMap[stage],
+      stageLabel: stageLabelMap[stage] || stage,
     });
+    
+    // Show XOR animation when entering xor-operation stage
+    setShowXorAnimation(stage === "xor-operation");
   };
 
   const manualStepForward = (base = "encrypt") => {
@@ -274,19 +295,16 @@ const Virtualization = () => {
     if (sIdx < stagesOrder.length - 1) {
       sIdx++;
     } else {
-      // move to next char if available
       if (cIdx < manualPreviews.length - 1) {
         cIdx++;
         sIdx = 0;
       } else {
-        // reached end
         return;
       }
     }
     setManualStageIndex(sIdx);
     setManualCharIndex(cIdx);
     updateCurrentStepFromManual(cIdx, sIdx, base);
-    // when we reach final encrypted stage for a char, mark it as completed in completedSteps
     if (stagesOrder[sIdx] === "encrypted") {
       setCompletedSteps((prev) => {
         const already = prev.find((p) => p.charIndex === manualPreviews[cIdx].charIndex);
@@ -310,7 +328,6 @@ const Virtualization = () => {
     if (sIdx > 0) {
       sIdx--;
     } else {
-      // go to prev char if available, and set to last stage
       if (cIdx > 0) {
         cIdx--;
         sIdx = stagesOrder.length - 1;
@@ -331,11 +348,10 @@ const Virtualization = () => {
     updateCurrentStepFromManual(newIndex, 0, base);
   };
 
-  /* ===== Auto visualization (existing behavior) ===== */
+  /* ===== Auto visualization ===== */
 
   const visualizeEncryption = async () => {
     if (!inputText || isPlaying) return;
-    // block if manualMode active
     if (manualMode) {
       prepareManualEncryption();
       return;
@@ -348,8 +364,8 @@ const Virtualization = () => {
     setCurrentStep(null);
     setCompletedSteps([]);
     setFinalEncryptedText("");
+    setShowXorAnimation(false);
 
-    // Generate keys & shared secret
     const aliceKeys = generateKeyPair();
     const bobKeys = generateKeyPair();
     const sharedSecret = deriveSharedSecret(aliceKeys.privateKey, bobKeys.publicKey);
@@ -382,14 +398,15 @@ const Virtualization = () => {
 
       const stages = [
         { stage: "original", stageLabel: "Original Character" },
-        { stage: "numeric", stageLabel: "Numeric Mapping (bytes shown)" },
-        { stage: "operation", stageLabel: "Encryption Operation Applied (keystream xor)" },
+        { stage: "numeric", stageLabel: "Numeric Mapping (bytes)" },
+        { stage: "xor-operation", stageLabel: "XOR Operation (bit-by-bit)" },
         { stage: "encrypted", stageLabel: "Final Encrypted Value" },
       ];
 
       for (const { stage, stageLabel } of stages) {
         if (runIdRef.current !== myRunId) break;
-        setCurrentStep({
+        
+        const stepData = {
           charIndex: i,
           char,
           charCode,
@@ -400,12 +417,29 @@ const Virtualization = () => {
           sharedSecretHex: sharedSecretPreview,
           keystreamHex: bytesToHex(keystreamBytes).slice(0, 32),
           ciphertextBytes: cipherBytes,
-        });
-        await wait(speedSettings[speed].step);
+          plaintextByte: charBytesArr[0] || 0,
+          keystreamByte: keystreamBytes[0] || 0,
+        };
+        
+        setCurrentStep(stepData);
+        setShowXorAnimation(stage === "xor-operation");
+        
+        // Play sounds for stage transitions
+        if (stage === "xor-operation") {
+          soundEffects.playXorOperation();
+        } else if (stage !== "original") {
+          soundEffects.playStageTransition();
+        }
+        
+        const waitTime = stage === "xor-operation" ? speedSettings[speed].xor : speedSettings[speed].step;
+        await wait(waitTime);
       }
 
       if (runIdRef.current !== myRunId) break;
 
+      // Play completion chime
+      soundEffects.playCompletionChime();
+      
       setCompletedSteps((prev) => [
         ...prev,
         {
@@ -419,15 +453,19 @@ const Virtualization = () => {
           sharedSecretHex: sharedSecretPreview,
           keystreamHex: bytesToHex(keystreamBytes).slice(0, 32),
           ciphertextBytes: cipherBytes,
+          plaintextByte: charBytesArr[0] || 0,
+          keystreamByte: keystreamBytes[0] || 0,
         },
       ]);
       setCurrentStep(null);
+      setShowXorAnimation(false);
       await wait(speedSettings[speed].complete);
       if (runIdRef.current !== myRunId) break;
     }
 
     if (runIdRef.current === myRunId) {
       setFinalEncryptedText(fullCiphertext);
+      soundEffects.playEncryptionComplete();
     }
     setIsPlaying(false);
   };
@@ -446,6 +484,7 @@ const Virtualization = () => {
     setCurrentStep(null);
     setCompletedSteps([]);
     setDecryptedText("");
+    setShowXorAnimation(false);
 
     try {
       let sharedSecret: Uint8Array;
@@ -481,14 +520,15 @@ const Virtualization = () => {
 
         const stages = [
           { stage: "encrypted", stageLabel: "Encrypted Value" },
-          { stage: "operation", stageLabel: "Decryption Operation Applied" },
-          { stage: "numeric", stageLabel: "Numeric Mapping (bytes shown)" },
+          { stage: "xor-operation", stageLabel: "XOR Operation (bit-by-bit)" },
+          { stage: "numeric", stageLabel: "Numeric Mapping (bytes)" },
           { stage: "original", stageLabel: "Original Character Recovered" },
         ];
 
         for (const { stage, stageLabel } of stages) {
           if (runIdRef.current !== myRunId) break;
-          setCurrentStep({
+          
+          const stepData = {
             charIndex: i,
             char,
             charCode,
@@ -499,12 +539,29 @@ const Virtualization = () => {
             sharedSecretHex: sharedSecretPreview,
             keystreamHex: bytesToHex(keystreamBytes).slice(0, 32),
             ciphertextBytes: cipherBytes,
-          });
-          await wait(speedSettings[speed].step);
+            plaintextByte: charBytesArr[0] || 0,
+            keystreamByte: keystreamBytes[0] || 0,
+          };
+          
+          setCurrentStep(stepData);
+          setShowXorAnimation(stage === "xor-operation");
+          
+          // Play sounds for stage transitions
+          if (stage === "xor-operation") {
+            soundEffects.playXorOperation();
+          } else if (stage !== "encrypted") {
+            soundEffects.playStageTransition();
+          }
+          
+          const waitTime = stage === "xor-operation" ? speedSettings[speed].xor : speedSettings[speed].step;
+          await wait(waitTime);
         }
 
         if (runIdRef.current !== myRunId) break;
 
+        // Play completion chime
+        soundEffects.playCompletionChime();
+        
         setCompletedSteps((prev) => [
           ...prev,
           {
@@ -518,18 +575,23 @@ const Virtualization = () => {
             sharedSecretHex: sharedSecretPreview,
             keystreamHex: bytesToHex(keystreamBytes).slice(0, 32),
             ciphertextBytes: cipherBytes,
+            plaintextByte: charBytesArr[0] || 0,
+            keystreamByte: keystreamBytes[0] || 0,
           },
         ]);
         setCurrentStep(null);
+        setShowXorAnimation(false);
         await wait(speedSettings[speed].complete);
         if (runIdRef.current !== myRunId) break;
       }
 
       if (runIdRef.current === myRunId) {
         setDecryptedText(fullDecryptedText);
+        soundEffects.playDecryptionComplete();
       }
     } catch (error) {
       console.error("Decryption failed:", error);
+      soundEffects.playError();
       alert("فشل فك التشفير. تحقق من النص المشفر والـ nonce.");
     } finally {
       setIsPlaying(false);
@@ -545,6 +607,7 @@ const Virtualization = () => {
       window.clearTimeout(timeoutRef.current);
     }
     setCurrentStep(null);
+    setShowXorAnimation(false);
   };
 
   const reset = () => {
@@ -559,31 +622,73 @@ const Virtualization = () => {
     setDecryptedText("");
     setAlicePrivateKey("");
     setBobPublicKey("");
-    // manual reset
     setManualPrepared(false);
     setManualPreviews([]);
     setManualCharIndex(0);
     setManualStageIndex(0);
     setManualMode(false);
+    setShowXorAnimation(false);
   };
 
   /* ===== Render UI ===== */
 
   return (
-    <div className="min-h-screen py-12 sm:py-20">
+    <div className="min-h-screen py-12 sm:py-20 bg-gradient-to-br from-background via-primary/5 to-accent/5">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
         <div className="text-center mb-8 sm:mb-12 animate-fade-in">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
+            <Zap className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium text-primary">XOR Cipher Visualization</span>
+          </div>
           <h1 className="text-3xl sm:text-5xl font-bold mb-4 gradient-text">
-            Encryption Virtualization (Auto + Manual Steps)
+            Encryption Virtualization
           </h1>
           <p className="text-base sm:text-xl text-muted-foreground max-w-2xl mx-auto">
-            Toggle between Auto visualization and Manual step-by-step mode. In Manual mode you can
-            advance stages and characters with Next / Prev.
+            Watch encryption happen bit-by-bit with detailed XOR operation visualization
           </p>
+
+          {/* Sound Controls */}
+          <Card className="max-w-md mx-auto mt-6 p-4 glass-card border-primary/20">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                {soundEnabled ? (
+                  <Volume2 className="w-4 h-4 text-primary" />
+                ) : (
+                  <VolumeX className="w-4 h-4 text-muted-foreground" />
+                )}
+                <Label htmlFor="sound-toggle" className="text-sm font-medium">
+                  Sound Effects
+                </Label>
+              </div>
+              <Switch
+                id="sound-toggle"
+                checked={soundEnabled}
+                onCheckedChange={(checked) => {
+                  setSoundEnabled(checked);
+                  if (checked) soundEffects.playClick();
+                }}
+              />
+            </div>
+            {soundEnabled && (
+              <div className="space-y-2 animate-fade-in">
+                <Label htmlFor="volume-slider" className="text-xs text-muted-foreground">
+                  Volume
+                </Label>
+                <Slider
+                  id="volume-slider"
+                  value={[soundVolume]}
+                  onValueChange={(values) => setSoundVolume(values[0])}
+                  max={1}
+                  step={0.1}
+                  className="w-full"
+                />
+              </div>
+            )}
+          </Card>
         </div>
 
         <Tabs defaultValue="encrypt" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-8">
+          <TabsList className="grid w-full grid-cols-2 mb-8 glass-card">
             <TabsTrigger value="encrypt" className="flex items-center gap-2">
               <Lock className="w-4 h-4" />
               Encryption
@@ -596,9 +701,9 @@ const Virtualization = () => {
 
           {/* ===== Encryption Tab ===== */}
           <TabsContent value="encrypt" className="space-y-8">
-            <Card className="p-6 sm:p-8 glass-card animate-fade-in space-y-4">
+            <Card className="p-6 sm:p-8 glass-card animate-fade-in space-y-4 border-primary/20">
               <div>
-                <label className="block text-sm font-medium mb-2">Input Text</label>
+                <label className="block text-sm font-medium mb-2 text-foreground">Input Text</label>
                 <Input
                   type="text"
                   value={inputText}
@@ -625,7 +730,7 @@ const Virtualization = () => {
                     disabled={isPlaying}
                     className="flex-1"
                   >
-                    Manual (Step-by-step)
+                    Manual
                   </Button>
                 </div>
               </div>
@@ -666,21 +771,38 @@ const Virtualization = () => {
               <div className="flex gap-3">
                 {!isPlaying ? (
                   <Button
-                    onClick={() => visualizeEncryption()}
+                    onClick={() => {
+                      soundEffects.playClick();
+                      visualizeEncryption();
+                    }}
                     disabled={!inputText || isPlaying}
-                    className="flex-1"
+                    className="flex-1 bg-gradient-to-r from-primary to-accent hover:opacity-90"
                   >
                     <Play className="w-4 h-4 mr-2" />
                     {manualMode ? "Prepare Manual" : "Visualize"}
                   </Button>
                 ) : (
-                  <Button onClick={stopVisualization} variant="destructive" className="flex-1">
+                  <Button
+                    onClick={() => {
+                      soundEffects.playClick();
+                      stopVisualization();
+                    }}
+                    variant="destructive"
+                    className="flex-1"
+                  >
                     <Pause className="w-4 h-4 mr-2" />
                     Stop
                   </Button>
                 )}
 
-                <Button onClick={reset} variant="outline" disabled={isPlaying}>
+                <Button
+                  onClick={() => {
+                    soundEffects.playClick();
+                    reset();
+                  }}
+                  variant="outline"
+                  disabled={isPlaying}
+                >
                   <RotateCcw className="w-4 h-4 mr-2" />
                   Reset
                 </Button>
@@ -688,168 +810,196 @@ const Virtualization = () => {
 
               {/* Manual Controls */}
               {manualMode && manualPrepared && manualPreviews.length > 0 && (
-                <Card className="p-4 glass-card bg-primary/5 border-primary/10">
+                <Card className="p-4 glass-card bg-primary/5 border-primary/20 animate-slide-in">
                   <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
                     <div className="flex gap-2 items-center">
-                      <Button onClick={() => manualStepBack("encrypt")} title="Step Back">
+                      <Button onClick={() => manualStepBack("encrypt")} title="Step Back" size="sm">
                         <StepBack className="w-4 h-4" />
                       </Button>
-                      <Button onClick={() => manualStepForward("encrypt")} title="Step Forward">
+                      <Button onClick={() => manualStepForward("encrypt")} title="Step Forward" size="sm">
                         <StepForward className="w-4 h-4" />
                       </Button>
-                      <Button onClick={() => manualGotoChar(manualCharIndex - 1, "encrypt")} title="Prev Char" disabled={manualCharIndex <= 0}>
+                      <Button onClick={() => manualGotoChar(manualCharIndex - 1, "encrypt")} title="Prev Char" size="sm" disabled={manualCharIndex <= 0}>
                         <Rewind className="w-4 h-4" />
                       </Button>
-                      <Button onClick={() => manualGotoChar(manualCharIndex + 1, "encrypt")} title="Next Char" disabled={manualCharIndex >= manualPreviews.length - 1}>
+                      <Button onClick={() => manualGotoChar(manualCharIndex + 1, "encrypt")} title="Next Char" size="sm" disabled={manualCharIndex >= manualPreviews.length - 1}>
                         <FastForward className="w-4 h-4" />
                       </Button>
                     </div>
 
                     <div className="text-sm text-muted-foreground">
-                      Char <strong>{manualCharIndex + 1}</strong> / {manualPreviews.length} • Stage:{" "}
-                      <strong>{stagesOrder[manualStageIndex]}</strong>
+                      Char <strong className="text-primary">{manualCharIndex + 1}</strong> / {manualPreviews.length} • Stage:{" "}
+                      <strong className="text-primary">{stagesOrder[manualStageIndex]}</strong>
                     </div>
                   </div>
                 </Card>
               )}
-
             </Card>
 
-            {/* Current Step / Completed / Final display (same layout as before, reacts to currentStep) */}
-            {(currentStep || completedSteps.length > 0) && (
-              <div className="space-y-6">
-                {currentStep && (
-                  <Card className="p-6 sm:p-8 glass-card border-primary/50 shadow-lg animate-fade-in">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-bold text-primary">
-                          Character {currentStep.charIndex + 1}: Processing
-                        </h3>
-                        <div className="px-3 py-1 bg-primary/20 rounded-full text-xs font-medium text-primary">
-                          {currentStep.stageLabel}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        {(currentStep.stage === "original" ||
-                          currentStep.stage === "numeric" ||
-                          currentStep.stage === "operation" ||
-                          currentStep.stage === "encrypted") && (
-                          <div className="p-4 bg-secondary/20 rounded-lg animate-fade-in">
-                            <div className="text-xs text-muted-foreground mb-2">Original Character</div>
-                            <div className="text-4xl font-bold text-center">{currentStep.char}</div>
-                          </div>
-                        )}
-
-                        {(currentStep.stage === "numeric" ||
-                          currentStep.stage === "operation" ||
-                          currentStep.stage === "encrypted") && (
-                          <div className="flex items-center gap-2 animate-fade-in">
-                            <div className="text-2xl text-primary">↓</div>
-                            <div className="flex-1 p-4 bg-primary/10 rounded-lg">
-                              <div className="text-xs text-muted-foreground mb-2">Numeric Bytes (TextEncoder)</div>
-                              <div className="text-sm font-mono text-center">
-                                {currentStep.charBytes ? currentStep.charBytes.join(" ") : "—"}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {(currentStep.stage === "operation" || currentStep.stage === "encrypted") && (
-                          <div className="flex flex-col gap-2 animate-fade-in">
-                            <div className="flex items-center gap-2">
-                              <div className="text-2xl text-primary">↓</div>
-                              <div className="flex-1 p-4 bg-accent/10 rounded-lg">
-                                <div className="text-xs text-muted-foreground mb-2">Operation (illustration)</div>
-                                <div className="text-sm text-center font-medium">
-                                  Shared secret (preview): <span className="font-mono">{currentStep.sharedSecretHex ?? "—"}</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-2">
-                                  Conceptually: <em>plaintext bytes XOR keystream → ciphertext bytes</em>.
-                                </div>
-                                <div className="text-sm font-mono text-center mt-2">
-                                  Keystream (hex preview): {currentStep.keystreamHex ?? "—"}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {currentStep.stage === "encrypted" && (
-                          <div className="flex items-center gap-2 animate-fade-in">
-                            <div className="text-2xl text-primary">↓</div>
-                            <div className="flex-1 p-4 bg-green-500/10 rounded-lg border border-green-500/30">
-                              <div className="text-xs text-muted-foreground mb-2">Final Encrypted Value (Base64)</div>
-                              <div className="text-sm font-mono text-center break-all text-green-600 dark:text-green-400">
-                                {currentStep.encrypted}
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-2">Ciphertext bytes preview: {currentStep.ciphertextBytes ? currentStep.ciphertextBytes.slice(0, 8).join(" ") : "—"}</div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                )}
-
-                {completedSteps.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-xl font-bold">Completed Characters</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {completedSteps.map((step, index) => (
-                        <Card key={index} className="p-4 glass-card bg-green-500/5 border-green-500/20 animate-fade-in">
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-muted-foreground">Char {step.charIndex + 1}</span>
-                              <span className="text-2xl font-bold">{step.char}</span>
-                            </div>
-                            <div className="text-xs text-muted-foreground">UTF-16: <span className="text-primary font-medium">{step.charCode}</span></div>
-                            <div className="text-xs text-muted-foreground truncate">Encrypted: <span className="font-mono">{step.encrypted}</span></div>
-                            <div className="text-xs text-muted-foreground">Keystream (hex preview): {step.keystreamHex ?? "—"}</div>
-                          </div>
-                        </Card>
-                      ))}
+            {/* Current Step Visualization */}
+            {currentStep && (
+              <Card className="p-6 sm:p-8 glass-card border-primary/50 shadow-lg animate-fade-in crypto-glow">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-primary">
+                      Character {currentStep.charIndex + 1}: {currentStep.char}
+                    </h3>
+                    <div className="px-3 py-1 bg-primary/20 rounded-full text-xs font-medium text-primary border border-primary/30">
+                      {currentStep.stageLabel}
                     </div>
                   </div>
-                )}
+
+                  {/* Original Character */}
+                  {(currentStep.stage === "original" || currentStep.stage === "numeric" || currentStep.stage === "xor-operation" || currentStep.stage === "encrypted") && (
+                    <div className="p-6 bg-crypto-plaintext/10 rounded-xl border-2 border-crypto-plaintext/30 animate-scale-in">
+                      <div className="text-xs text-muted-foreground mb-2 font-medium">Original Character</div>
+                      <div className="text-5xl font-bold text-center text-crypto-plaintext">{currentStep.char}</div>
+                      <div className="text-center text-sm text-muted-foreground mt-2">
+                        UTF-16: <span className="font-mono text-crypto-plaintext">{currentStep.charCode}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Numeric Bytes */}
+                  {(currentStep.stage === "numeric" || currentStep.stage === "xor-operation" || currentStep.stage === "encrypted") && (
+                    <div className="space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-center">
+                        <div className="text-3xl text-primary animate-pulse-glow">↓</div>
+                      </div>
+                      <div className="p-6 bg-crypto-plaintext/10 rounded-xl border border-crypto-plaintext/20">
+                        <div className="text-xs text-muted-foreground mb-3 font-medium">Plaintext Byte (UTF-8)</div>
+                        <div className="flex justify-center gap-2">
+                          {currentStep.charBytes?.map((byte, idx) => (
+                            <div key={idx} className="px-4 py-2 bg-crypto-plaintext/20 rounded-lg border border-crypto-plaintext/30">
+                              <div className="text-sm font-mono font-bold text-crypto-plaintext">{byte}</div>
+                              <div className="text-xs text-muted-foreground mt-1">0x{byte.toString(16).toUpperCase()}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* XOR Operation Visualization */}
+                  {currentStep.stage === "xor-operation" && showXorAnimation && currentStep.plaintextByte !== undefined && currentStep.keystreamByte !== undefined && (
+                    <div className="animate-fade-in">
+                      <div className="flex items-center justify-center mb-4">
+                        <div className="text-3xl text-crypto-operation animate-pulse-glow">↓</div>
+                      </div>
+                      <XorVisualization
+                        plaintextByte={currentStep.plaintextByte}
+                        keystreamByte={currentStep.keystreamByte}
+                        label="XOR Encryption Operation"
+                        speed={speedSettings[speed].xor / 10}
+                      />
+                    </div>
+                  )}
+
+                  {/* Final Encrypted Value */}
+                  {currentStep.stage === "encrypted" && (
+                    <div className="space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-center">
+                        <div className="text-3xl text-crypto-ciphertext animate-pulse-glow">↓</div>
+                      </div>
+                      <div className="p-6 bg-crypto-ciphertext/10 rounded-xl border-2 border-crypto-ciphertext/30">
+                        <div className="text-xs text-muted-foreground mb-3 font-medium">Encrypted Value (Base64)</div>
+                        <div className="text-sm font-mono text-center break-all text-crypto-ciphertext font-bold">
+                          {currentStep.encrypted}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-3 text-center">
+                          Result byte: {currentStep.ciphertextBytes?.[0]} (0x{currentStep.ciphertextBytes?.[0]?.toString(16).toUpperCase()})
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {/* Completed Characters */}
+            {completedSteps.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <span className="text-crypto-ciphertext">✓</span> Completed Characters
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {completedSteps.map((step, index) => (
+                    <Card key={index} className="p-4 glass-card bg-crypto-ciphertext/5 border-crypto-ciphertext/20 animate-scale-in hover:border-crypto-ciphertext/40 transition-all">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Char {step.charIndex + 1}</span>
+                          <span className="text-2xl font-bold text-crypto-ciphertext">{step.char}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Byte: <span className="text-primary font-medium font-mono">{step.charBytes?.[0]}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          Encrypted: <span className="font-mono text-crypto-ciphertext">{step.encrypted}</span>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
               </div>
             )}
 
+            {/* Final Encrypted Result */}
             {finalEncryptedText && (
-              <Card className="p-6 glass-card bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30 animate-fade-in">
-                <h3 className="text-lg font-bold mb-4 text-green-600 dark:text-green-400">🔒 Final Encrypted Text</h3>
-                <div className="space-y-3">
-                  <div className="p-4 bg-background/50 rounded-lg border border-green-500/20">
+              <Card className="p-6 sm:p-8 glass-card bg-gradient-to-br from-crypto-ciphertext/10 to-crypto-ciphertext/5 border-crypto-ciphertext/30 animate-fade-in crypto-glow">
+                <h3 className="text-lg font-bold mb-4 text-crypto-ciphertext flex items-center gap-2">
+                  <Lock className="w-5 h-5" /> Final Encrypted Text
+                </h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-background/50 rounded-lg border border-crypto-ciphertext/20">
                     <div className="text-xs text-muted-foreground mb-2">Original Text</div>
                     <div className="text-base font-medium break-all">{inputText}</div>
                   </div>
 
                   <div className="flex justify-center">
-                    <div className="text-3xl text-green-600 dark:text-green-400">↓</div>
+                    <div className="text-3xl text-crypto-ciphertext">↓</div>
                   </div>
 
-                  <div className="p-4 bg-background/50 rounded-lg border border-green-500/20">
+                  <div className="p-4 bg-background/50 rounded-lg border border-crypto-ciphertext/30">
                     <div className="text-xs text-muted-foreground mb-2">Encrypted (Base64)</div>
-                    <div className="text-sm font-mono break-all text-green-600 dark:text-green-400 select-all">{finalEncryptedText}</div>
+                    <div className="text-sm font-mono break-all text-crypto-ciphertext select-all font-bold">
+                      {finalEncryptedText}
+                    </div>
                   </div>
 
-                  <div className="p-4 bg-background/50 rounded-lg border border-green-500/20">
+                  <div className="p-4 bg-background/50 rounded-lg border border-primary/30">
                     <div className="text-xs text-muted-foreground mb-2">Nonce (Required for Decryption)</div>
-                    <div className="text-sm font-mono break-all text-primary select-all">{encryptionNonce}</div>
+                    <div className="text-sm font-mono break-all text-primary select-all">
+                      {encryptionNonce}
+                    </div>
                   </div>
 
                   <div className="flex gap-2">
-                    <Button onClick={() => navigator.clipboard.writeText(finalEncryptedText)} variant="outline" className="flex-1 border-green-500/30 hover:bg-green-500/10">Copy Encrypted Text</Button>
-                    <Button onClick={() => navigator.clipboard.writeText(encryptionNonce)} variant="outline" className="flex-1 border-primary/30 hover:bg-primary/10">Copy Nonce</Button>
+                    <Button
+                      onClick={() => navigator.clipboard.writeText(finalEncryptedText)}
+                      variant="outline"
+                      className="flex-1 border-crypto-ciphertext/30 hover:bg-crypto-ciphertext/10"
+                    >
+                      Copy Encrypted
+                    </Button>
+                    <Button
+                      onClick={() => navigator.clipboard.writeText(encryptionNonce)}
+                      variant="outline"
+                      className="flex-1 border-primary/30 hover:bg-primary/10"
+                    >
+                      Copy Nonce
+                    </Button>
                   </div>
 
-                  <Button onClick={() => {
-                    setEncryptedInput(finalEncryptedText);
-                    setNonceInput(encryptionNonce);
-                    const decryptTab = document.querySelector('[value="decrypt"]') as HTMLElement;
-                    if (decryptTab) decryptTab.click();
-                  }} className="w-full bg-blue-600 hover:bg-blue-700">
-                    Test Decryption with This Text
+                  <Button
+                    onClick={() => {
+                      setEncryptedInput(finalEncryptedText);
+                      setNonceInput(encryptionNonce);
+                      const decryptTab = document.querySelector('[value="decrypt"]') as HTMLElement;
+                      if (decryptTab) decryptTab.click();
+                    }}
+                    className="w-full bg-gradient-to-r from-accent to-primary hover:opacity-90"
+                  >
+                    Test Decryption →
                   </Button>
                 </div>
               </Card>
@@ -858,166 +1008,265 @@ const Virtualization = () => {
 
           {/* ===== Decryption Tab ===== */}
           <TabsContent value="decrypt" className="space-y-8">
-            <Card className="p-6 sm:p-8 glass-card animate-fade-in space-y-4">
+            <Card className="p-6 sm:p-8 glass-card animate-fade-in space-y-4 border-accent/20">
               <div>
                 <label className="block text-sm font-medium mb-2">Encrypted Text (Base64)</label>
-                <Textarea value={encryptedInput} onChange={(e) => setEncryptedInput(e.target.value)} placeholder="Paste encrypted text here..." className="w-full min-h-[100px] font-mono text-sm" />
+                <Textarea
+                  value={encryptedInput}
+                  onChange={(e) => setEncryptedInput(e.target.value)}
+                  placeholder="Paste encrypted text here..."
+                  className="w-full min-h-[100px] font-mono text-sm"
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Nonce (Base64)</label>
-                <Input type="text" value={nonceInput} onChange={(e) => setNonceInput(e.target.value)} placeholder="Paste nonce here..." className="w-full font-mono text-sm" />
+                <Input
+                  type="text"
+                  value={nonceInput}
+                  onChange={(e) => setNonceInput(e.target.value)}
+                  placeholder="Paste nonce here..."
+                  className="w-full font-mono text-sm"
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-2">Mode</label>
                 <div className="flex gap-2">
-                  <Button variant={!manualMode ? "default" : "outline"} onClick={() => setManualMode(false)} disabled={isPlaying} className="flex-1">Auto</Button>
-                  <Button variant={manualMode ? "default" : "outline"} onClick={() => setManualMode(true)} disabled={isPlaying} className="flex-1">Manual (Step-by-step)</Button>
+                  <Button
+                    variant={!manualMode ? "default" : "outline"}
+                    onClick={() => setManualMode(false)}
+                    disabled={isPlaying}
+                    className="flex-1"
+                  >
+                    Auto
+                  </Button>
+                  <Button
+                    variant={manualMode ? "default" : "outline"}
+                    onClick={() => setManualMode(true)}
+                    disabled={isPlaying}
+                    className="flex-1"
+                  >
+                    Manual
+                  </Button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Visualization Speed</label>
+                <label className="block text-sm font-medium mb-2">Speed</label>
                 <div className="flex gap-2">
-                  <Button type="button" variant={speed === "slow" ? "default" : "outline"} onClick={() => setSpeed("slow")} disabled={isPlaying || manualMode} className="flex-1">Slow</Button>
-                  <Button type="button" variant={speed === "medium" ? "default" : "outline"} onClick={() => setSpeed("medium")} disabled={isPlaying || manualMode} className="flex-1">Medium</Button>
-                  <Button type="button" variant={speed === "fast" ? "default" : "outline"} onClick={() => setSpeed("fast")} disabled={isPlaying || manualMode} className="flex-1">Fast</Button>
+                  <Button
+                    type="button"
+                    variant={speed === "slow" ? "default" : "outline"}
+                    onClick={() => setSpeed("slow")}
+                    disabled={isPlaying || manualMode}
+                    className="flex-1"
+                  >
+                    Slow
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={speed === "medium" ? "default" : "outline"}
+                    onClick={() => setSpeed("medium")}
+                    disabled={isPlaying || manualMode}
+                    className="flex-1"
+                  >
+                    Medium
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={speed === "fast" ? "default" : "outline"}
+                    onClick={() => setSpeed("fast")}
+                    disabled={isPlaying || manualMode}
+                    className="flex-1"
+                  >
+                    Fast
+                  </Button>
                 </div>
               </div>
 
               <div className="flex gap-3">
                 {!isPlaying ? (
-                  <Button onClick={() => visualizeDecryption()} disabled={!encryptedInput || !nonceInput || isPlaying} className="flex-1">
-                    <Play className="w-4 h-4 mr-2" /> {manualMode ? "Prepare Manual" : "Visualize Decryption"}
+                  <Button
+                    onClick={() => {
+                      soundEffects.playClick();
+                      visualizeDecryption();
+                    }}
+                    disabled={!encryptedInput || !nonceInput || isPlaying}
+                    className="flex-1 bg-gradient-to-r from-accent to-primary hover:opacity-90"
+                  >
+                    <Play className="w-4 h-4 mr-2" />
+                    {manualMode ? "Prepare Manual" : "Visualize Decryption"}
                   </Button>
                 ) : (
-                  <Button onClick={stopVisualization} variant="destructive" className="flex-1">
-                    <Pause className="w-4 h-4 mr-2" /> Stop
+                  <Button
+                    onClick={() => {
+                      soundEffects.playClick();
+                      stopVisualization();
+                    }}
+                    variant="destructive"
+                    className="flex-1"
+                  >
+                    <Pause className="w-4 h-4 mr-2" />
+                    Stop
                   </Button>
                 )}
-                <Button onClick={reset} variant="outline" disabled={isPlaying}><RotateCcw className="w-4 h-4 mr-2" /> Reset</Button>
+                <Button
+                  onClick={() => {
+                    soundEffects.playClick();
+                    reset();
+                  }}
+                  variant="outline"
+                  disabled={isPlaying}
+                >
+                  <RotateCcw className="w-4 h-4 mr-2" />
+                  Reset
+                </Button>
               </div>
 
-              {/* Manual Controls for Decrypt */}
               {manualMode && manualPrepared && manualPreviews.length > 0 && (
-                <Card className="p-4 glass-card bg-primary/5 border-primary/10">
+                <Card className="p-4 glass-card bg-accent/5 border-accent/20 animate-slide-in">
                   <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
                     <div className="flex gap-2 items-center">
-                      <Button onClick={() => manualStepBack("decrypt")} title="Step Back"><StepBack className="w-4 h-4" /></Button>
-                      <Button onClick={() => manualStepForward("decrypt")} title="Step Forward"><StepForward className="w-4 h-4" /></Button>
-                      <Button onClick={() => manualGotoChar(manualCharIndex - 1, "decrypt")} title="Prev Char" disabled={manualCharIndex <= 0}><Rewind className="w-4 h-4" /></Button>
-                      <Button onClick={() => manualGotoChar(manualCharIndex + 1, "decrypt")} title="Next Char" disabled={manualCharIndex >= manualPreviews.length - 1}><FastForward className="w-4 h-4" /></Button>
+                      <Button onClick={() => manualStepBack("decrypt")} title="Step Back" size="sm">
+                        <StepBack className="w-4 h-4" />
+                      </Button>
+                      <Button onClick={() => manualStepForward("decrypt")} title="Step Forward" size="sm">
+                        <StepForward className="w-4 h-4" />
+                      </Button>
+                      <Button onClick={() => manualGotoChar(manualCharIndex - 1, "decrypt")} title="Prev Char" size="sm" disabled={manualCharIndex <= 0}>
+                        <Rewind className="w-4 h-4" />
+                      </Button>
+                      <Button onClick={() => manualGotoChar(manualCharIndex + 1, "decrypt")} title="Next Char" size="sm" disabled={manualCharIndex >= manualPreviews.length - 1}>
+                        <FastForward className="w-4 h-4" />
+                      </Button>
                     </div>
 
                     <div className="text-sm text-muted-foreground">
-                      Char <strong>{manualCharIndex + 1}</strong> / {manualPreviews.length} • Stage: <strong>{stagesOrder[manualStageIndex]}</strong>
+                      Char <strong className="text-accent">{manualCharIndex + 1}</strong> / {manualPreviews.length} • Stage:{" "}
+                      <strong className="text-accent">{stagesOrder[manualStageIndex]}</strong>
                     </div>
                   </div>
                 </Card>
               )}
             </Card>
 
-            {/* Current / Completed / Final Decrypted */}
-            {(currentStep || completedSteps.length > 0) && (
-              <div className="space-y-6">
-                {currentStep && (
-                  <Card className="p-6 sm:p-8 glass-card border-primary/50 shadow-lg animate-fade-in">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-bold text-primary">
-                          Character {currentStep.charIndex + 1}: Processing
-                        </h3>
-                        <div className="px-3 py-1 bg-primary/20 rounded-full text-xs font-medium text-primary">
-                          {currentStep.stageLabel}
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        {(currentStep.stage === "encrypted" || currentStep.stage === "operation" || currentStep.stage === "numeric" || currentStep.stage === "original") && (
-                          <div className="p-4 bg-green-500/10 rounded-lg border border-green-500/30 animate-fade-in">
-                            <div className="text-xs text-muted-foreground mb-2">Encrypted Value (Base64)</div>
-                            <div className="text-sm font-mono text-center break-all text-green-600 dark:text-green-400">{currentStep.encrypted}</div>
-                          </div>
-                        )}
-
-                        {(currentStep.stage === "operation" || currentStep.stage === "numeric" || currentStep.stage === "original") && (
-                          <div className="flex items-center gap-2 animate-fade-in">
-                            <div className="text-2xl text-primary">↓</div>
-                            <div className="flex-1 p-4 bg-accent/10 rounded-lg">
-                              <div className="text-xs text-muted-foreground mb-2">Decryption Operation</div>
-                              <div className="text-sm text-center font-medium">X25519 + XSalsa20-Poly1305 (illustration)</div>
-                              <div className="text-xs text-muted-foreground mt-2">Shared secret (preview): <span className="font-mono">{currentStep.sharedSecretHex ?? "—"}</span></div>
-                              <div className="text-sm font-mono text-center mt-2">Keystream (hex preview): {currentStep.keystreamHex ?? "—"}</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {(currentStep.stage === "numeric" || currentStep.stage === "original") && (
-                          <div className="flex items-center gap-2 animate-fade-in">
-                            <div className="text-2xl text-primary">↓</div>
-                            <div className="flex-1 p-4 bg-primary/10 rounded-lg">
-                              <div className="text-xs text-muted-foreground mb-2">Numeric Value (bytes)</div>
-                              <div className="text-3xl font-bold text-primary text-center">{currentStep.charBytes ? currentStep.charBytes.join(" ") : "—"}</div>
-                            </div>
-                          </div>
-                        )}
-
-                        {currentStep.stage === "original" && (
-                          <div className="flex items-center gap-2 animate-fade-in">
-                            <div className="text-2xl text-primary">↓</div>
-                            <div className="flex-1 p-4 bg-blue-500/10 rounded-lg border border-blue-500/30">
-                              <div className="text-xs text-muted-foreground mb-2">Original Character</div>
-                              <div className="text-4xl font-bold text-center text-blue-600 dark:text-blue-400">{currentStep.char}</div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
-                )}
-
-                {completedSteps.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-xl font-bold">Completed Characters</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {completedSteps.map((step, index) => (
-                        <Card key={index} className="p-4 glass-card bg-blue-500/5 border-blue-500/20 animate-fade-in">
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-muted-foreground">Char {step.charIndex + 1}</span>
-                              <span className="text-2xl font-bold">{step.char}</span>
-                            </div>
-                            <div className="text-xs text-muted-foreground">UTF-16: <span className="text-primary font-medium">{step.charCode}</span></div>
-                            <div className="text-xs text-muted-foreground truncate">Encrypted: <span className="font-mono">{step.encrypted}</span></div>
-                          </div>
-                        </Card>
-                      ))}
+            {/* Current Step for Decryption - Similar structure but reversed flow */}
+            {currentStep && (
+              <Card className="p-6 sm:p-8 glass-card border-accent/50 shadow-lg animate-fade-in crypto-glow">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-accent">
+                      Character {currentStep.charIndex + 1}: {currentStep.char}
+                    </h3>
+                    <div className="px-3 py-1 bg-accent/20 rounded-full text-xs font-medium text-accent border border-accent/30">
+                      {currentStep.stageLabel}
                     </div>
                   </div>
-                )}
+
+                  {/* Show stages in reverse for decryption */}
+                  {currentStep.stage === "encrypted" && (
+                    <div className="p-6 bg-crypto-ciphertext/10 rounded-xl border-2 border-crypto-ciphertext/30 animate-scale-in">
+                      <div className="text-xs text-muted-foreground mb-3 font-medium">Encrypted Value</div>
+                      <div className="text-sm font-mono text-center break-all text-crypto-ciphertext font-bold">
+                        {currentStep.encrypted}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentStep.stage === "xor-operation" && showXorAnimation && currentStep.plaintextByte !== undefined && currentStep.keystreamByte !== undefined && (
+                    <div className="animate-fade-in">
+                      <XorVisualization
+                        plaintextByte={currentStep.plaintextByte}
+                        keystreamByte={currentStep.keystreamByte}
+                        label="XOR Decryption Operation"
+                        speed={speedSettings[speed].xor / 10}
+                      />
+                    </div>
+                  )}
+
+                  {(currentStep.stage === "numeric" || currentStep.stage === "original") && (
+                    <div className="p-6 bg-crypto-plaintext/10 rounded-xl border border-crypto-plaintext/20 animate-scale-in">
+                      <div className="text-xs text-muted-foreground mb-3 font-medium">Plaintext Byte</div>
+                      <div className="flex justify-center gap-2">
+                        {currentStep.charBytes?.map((byte, idx) => (
+                          <div key={idx} className="px-4 py-2 bg-crypto-plaintext/20 rounded-lg border border-crypto-plaintext/30">
+                            <div className="text-sm font-mono font-bold text-crypto-plaintext">{byte}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentStep.stage === "original" && (
+                    <div className="space-y-3 animate-fade-in">
+                      <div className="flex items-center justify-center">
+                        <div className="text-3xl text-accent animate-pulse-glow">↓</div>
+                      </div>
+                      <div className="p-6 bg-accent/10 rounded-xl border-2 border-accent/30">
+                        <div className="text-xs text-muted-foreground mb-2 font-medium">Original Character Recovered</div>
+                        <div className="text-5xl font-bold text-center text-accent">{currentStep.char}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )}
+
+            {completedSteps.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <span className="text-accent">✓</span> Completed Characters
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {completedSteps.map((step, index) => (
+                    <Card key={index} className="p-4 glass-card bg-accent/5 border-accent/20 animate-scale-in hover:border-accent/40 transition-all">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Char {step.charIndex + 1}</span>
+                          <span className="text-2xl font-bold text-accent">{step.char}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Byte: <span className="text-primary font-medium font-mono">{step.charBytes?.[0]}</span>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
               </div>
             )}
 
             {decryptedText && (
-              <Card className="p-6 glass-card bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border-blue-500/30 animate-fade-in">
-                <h3 className="text-lg font-bold mb-4 text-blue-600 dark:text-blue-400">🔓 Final Decrypted Text</h3>
-                <div className="space-y-3">
-                  <div className="p-4 bg-background/50 rounded-lg border border-blue-500/20">
-                    <div className="text-xs text-muted-foreground mb-2">Encrypted Text (Base64)</div>
-                    <div className="text-sm font-mono break-all text-muted-foreground">{encryptedInput.substring(0, 50)}...</div>
+              <Card className="p-6 sm:p-8 glass-card bg-gradient-to-br from-accent/10 to-accent/5 border-accent/30 animate-fade-in crypto-glow">
+                <h3 className="text-lg font-bold mb-4 text-accent flex items-center gap-2">
+                  <Unlock className="w-5 h-5" /> Final Decrypted Text
+                </h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-background/50 rounded-lg border border-accent/20">
+                    <div className="text-xs text-muted-foreground mb-2">Encrypted Text</div>
+                    <div className="text-sm font-mono break-all text-muted-foreground">
+                      {encryptedInput.substring(0, 50)}...
+                    </div>
                   </div>
 
                   <div className="flex justify-center">
-                    <div className="text-3xl text-blue-600 dark:text-blue-400">↓</div>
+                    <div className="text-3xl text-accent">↓</div>
                   </div>
 
-                  <div className="p-4 bg-background/50 rounded-lg border border-blue-500/20">
+                  <div className="p-4 bg-background/50 rounded-lg border border-accent/30">
                     <div className="text-xs text-muted-foreground mb-2">Decrypted Text</div>
-                    <div className="text-base font-medium break-all text-blue-600 dark:text-blue-400 select-all">{decryptedText}</div>
+                    <div className="text-base font-medium break-all text-accent select-all font-bold">
+                      {decryptedText}
+                    </div>
                   </div>
 
-                  <Button onClick={() => navigator.clipboard.writeText(decryptedText)} variant="outline" className="w-full border-blue-500/30 hover:bg-blue-500/10">Copy Decrypted Text</Button>
+                  <Button
+                    onClick={() => navigator.clipboard.writeText(decryptedText)}
+                    variant="outline"
+                    className="w-full border-accent/30 hover:bg-accent/10"
+                  >
+                    Copy Decrypted Text
+                  </Button>
                 </div>
               </Card>
             )}
