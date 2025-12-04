@@ -72,6 +72,9 @@ const Home = () => {
 
       {/* Features Section */}
       <section className="py-12 sm:py-16 lg:py-20 animate-fade-in-delay px-4">
+        <h2 className="text-3xl sm:text-4xl font-bold text-center mb-10 sm:mb-12">
+          Why We Choose X25519?
+        </h2>
         <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
 
           {/* High Security */}

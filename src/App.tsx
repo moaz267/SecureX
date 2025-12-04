@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import ScrollToTop from "./components/ScrollToTop";
 import Home from "./pages/Home";
+import { Analytics } from "@vercel/analytics/react"
 
 import Tool from "./pages/Tool";
 import NotFound from "./pages/NotFound";
